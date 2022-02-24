@@ -119,7 +119,7 @@ GPU_ISP			equ		(GPU_USP-(4*GPU_STACK_SIZE))
 
 ; ------------------------  LSP
 DSP_music_ON						.equ			1								; 0/1 = music Off/On
-LSP_DSP_Audio_frequence					.equ			36000				; real hardware needs lower sample frequencies than emulators 
+LSP_DSP_Audio_frequence					.equ			32000				; real hardware needs lower sample frequencies than emulators 
 nb_bits_virgule_offset					.equ			10					; 9 ok DRAM/ 8 avec samples en ram DSP
 display_infos_debug				.equ			1
 DSP_DEBUG						.equ			0
