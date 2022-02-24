@@ -17,9 +17,9 @@
 ; OK - tester sprite sur la gauche, X négatif - reglé
 
 ; OK - fade IN/ face OUT sur certains textes
-; - écran d'intro avec fade in : image de fond puis chaque texte en fade in fade out
+; OK - écran d'intro avec fade in : image de fond puis chaque texte en fade in fade out
 
-; - integrer LSP2
+; OK - integrer LSP
 
 ;CC (Carry Clear) = %00100
 ;CS (Carry Set)   = %01000
@@ -33,7 +33,7 @@
 
 	include	"jaguar.inc"
 
-introduction_ON_OFF		equ			0
+introduction_ON_OFF		equ			1
 CLEAR_BSS			.equ			1									; 1=efface toute la BSS jusqu'a la fin de la ram utilisée
 
 vitesse_scrolling	equ		4
@@ -119,8 +119,8 @@ GPU_ISP			equ		(GPU_USP-(4*GPU_STACK_SIZE))
 
 ; ------------------------  LSP
 DSP_music_ON						.equ			1								; 0/1 = music Off/On
-LSP_DSP_Audio_frequence					.equ			50000				; real hardware needs lower sample frequencies than emulators 
-nb_bits_virgule_offset					.equ			11					; 11 ok DRAM/ 8 avec samples en ram DSP
+LSP_DSP_Audio_frequence					.equ			36000				; real hardware needs lower sample frequencies than emulators 
+nb_bits_virgule_offset					.equ			10					; 9 ok DRAM/ 8 avec samples en ram DSP
 display_infos_debug				.equ			1
 DSP_DEBUG						.equ			0
 I2S_during_Timer1				.equ			0									; 0= I2S waits while timer 1 / 1=IMASK cleared while Timer 1
@@ -145,9 +145,13 @@ DSP_ISP			equ		(DSP_USP-(4*DSP_STACK_SIZE))
 
 			.68000
 
+	move.l		#$70007,G_END
+	move.l		#$70007,D_END
+	
 
 	move.l		#INITSTACK, sp	
-	move.w		#%0000011011000111, VMODE			; 320x256 / 16 bit RGB / 
+	move.w		#%0000011011000111, VMODE			; 320x256 / 16 bit RGB / $6C7
+	
 	move.w		#$100,JOYSTICK
 
 
@@ -187,8 +191,6 @@ boucle_clean_BSS3:
 	
 	bsr     InitVideo2 
 
-	lea		image_debut,a0
-	bsr		copie_couleurs_dans_CLUT
 
 
 
@@ -238,6 +240,12 @@ boucle_copie_bloc_DSP:
 	move.l	#DSPGO,D_CTRL
 
 	move.l	#0,LSP_DSP_flag
+
+	move.l	#0,vbl_counter
+
+; all colors to black
+	lea		ecran_intro,a0
+	bsr		copie_couleurs_dans_CLUT
 	
 	.if		introduction_ON_OFF=1
 	bsr		introduction
@@ -258,6 +266,20 @@ boucle_copie_bloc_DSP:
 	.if		GPU_OL_interrupt=0
     bsr     InitVideo2               	; Setup our video registers.
 	.endif
+
+	;move.w		#%0000001011000111, VMODE			; 640x256 / 16 bit RGB / $2C7
+
+
+	move.l  #VBL,LEVEL0     	; Install 68K LEVEL0 handler
+	move.w  a_vde,d0                	; Must be ODD
+	sub.w   #16,d0
+	ori.w   #1,d0
+	move.w  d0,VI
+	move.w  #%01,INT1                 	; Enable video interrupts 11101
+
+
+
+
 	
 	;move	#$70,BG						; vert
 
@@ -281,7 +303,6 @@ boucle_copie_bloc_DSP:
 	;move.l	d0,OLP
 
 
-	move.l	#0,vbl_counter
 
 ; mise en place vecteur VBL 68000
 	move.l  #VBL,LEVEL0     	; Install 68K LEVEL0 handler
@@ -334,11 +355,14 @@ toto:
 ; introduction avec sa VBL et son OL
 introduction:
 	jsr     copy_olist_intro
+	
 	jsr		copy_image_sur_ecran_intro
 
 	move.l	#ob_list_1,d0					; set the object list pointer
 	swap	d0
 	move.l	d0,OLP
+	
+	
 
 ; mise en place vecteur VBL 68000
 	move.l  #VBL_intro,LEVEL0     	; Install 68K LEVEL0 handler
@@ -350,9 +374,13 @@ introduction:
 	
 	and.w   #$f8ff,sr
 
+	
 
 
 ; FADE IN sur les couleurs du fond
+	lea		image_debut,a0
+	bsr		copie_couleurs_dans_CLUT_FADEIN
+	
 
 ; copie le texte 1
 
@@ -606,18 +634,6 @@ wait_1_VBL2a1a3:
 	jsr		copy_texte_intro_sur_ecran_ecrase
 
 retour_introduction:
-
-	move.l  #VBL,LEVEL0     	; Install 68K LEVEL0 handler
-	move.w  a_vde,d0                	; Must be ODD
-	sub.w   #16,d0
-	ori.w   #1,d0
-	move.w  d0,VI
-	move.w  #%01,INT1                 	; Enable video interrupts 11101
-
-
-
-
-
 
 	rts
 
@@ -995,6 +1011,30 @@ copie_couleurs_dans_CLUT:
 	rts
 
 ;----------------------------------
+; recopie les couleurs de A0 dans CLUT avec FADE IN
+copie_couleurs_dans_CLUT_FADEIN:
+
+	lea		CLUT,a1
+	move.l	#20-1,d7
+	
+	
+copie_couleurs_FADEIN:
+	move.w	(a0)+,(a1)+
+	moveq	#2,d6
+waitVBLcopie_couleurs_FADEIN:
+	move.l		vbl_counter,d1
+wait_1_VBLa1clut:
+
+	move.l		vbl_counter,d2
+	cmp.l		d1,d2
+	beq.s		wait_1_VBLa1clut
+	dbf			d6,waitVBLcopie_couleurs_FADEIN
+
+	dbf		d7,copie_couleurs_FADEIN
+	rts
+
+
+;----------------------------------
 ; recopie l'object list dans la courante
 
 				.if		1=0
@@ -1150,7 +1190,7 @@ calc_vals:
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
-;; Procedure: InitVideo (same as in vidinit.s)
+;; Procedure: InitVideo 
 ;;
 
 InitVideo:
@@ -1177,9 +1217,9 @@ InitVideo:
 	move.w		#1,ntsc_flag
 	move.l		#60,_50ou60hertz
 
-	move.w		#$66A,(a1)
-	move.w		#$71,(a2)				; B7
-	move.w		#$71,(a3)				; B7
+	move.w		#$6BF,(a1)				;	67a									6BF				HDE
+	move.w		#$71,(a2)				; B7			; EDZ:71				7B
+	move.w		#$71,(a3)				; B7			; EDZ:71				7B
 	move.w		#$28,(a4)
 	move.w		#$20A,(a5)
 	move.w		#$20A-16+1,d0
@@ -1190,9 +1230,9 @@ InitVideo:
 ; PAL
 .palvals:
 	moveq	#0,d0
-	move.w		#$678,(a1)
-	move.w		#$71,(a2)			; CB
-	move.w		#$71,(a3)			; CB
+	move.w		#$6B1,(a1)			; 678				; EDZ : 678				6B1
+	move.w		#$71,(a2)			; CB				; EDZ : 71				103
+	move.w		#$71,(a3)			; CB				; EDZ : 71				103
 	move.w		#$40,(a4)
 	move.w		#$242,(a5)
 	move.w		#$242-16+1,d0
@@ -1800,7 +1840,7 @@ GPU_boucle_creer_branch_fin_de_bloc:
 		movei	#GPU_avancer_scrolling_pas_fin_de_la_colonne,R25
 		movei	#GPU_avancer_scrolling_pas_fin_de_la_lettre,R26
 		cmpq	#0,R0
-		jump	ne,(R25)
+		jump	hi,(R25)
 		nop
 ; fin de la colonne, il faut avancer 
 		movei	#GPU_position_dans_la_lettre_scrolling,R11
@@ -1888,7 +1928,10 @@ GPU_avancer_scrolling_pas_fin_de_la_lettre:
 		store	R1,(R11)
 		
 GPU_avancer_scrolling_pas_fin_de_la_colonne:
-		subq	#vitesse_scrolling,R0
+		movei	#GPU_vitesse_scrolling,R1
+		load	(R1),R2
+
+		sub		R2,R0
 		store	R0,(R10)
 
 
@@ -1957,6 +2000,7 @@ GPU_position_dans_la_lettre_scrolling:		dc.l			0					; de 0 à 11 par pas de 1
 GPU_position_dans_la_colonne_scrolling:		dc.l			16					; de 0 à 16, par pas de -4 //// 0 4 8 12 
 GPU_pointeur_fin_liste_points_sprites:		dc.l			0					; pointe à la fin de la liste des sprites
 GPU_pointeur_sur_sprite_en_cours:			dc.l			bob+512				; 16*8=128
+
 
 GPU_taille_caractere_actuel:				dc.l			11
 
@@ -3444,13 +3488,13 @@ DSP_routine_init_DSP:
 ; enable interrupts
 	movei	#D_FLAGS,r30
 	
-	movei	#D_I2SENA|D_TIM1ENA|D_TIM2ENA|REGPAGE,r29			; I2S+Timer 1+timer 2
+	;movei	#D_I2SENA|D_TIM1ENA|D_TIM2ENA|REGPAGE,r29			; I2S+Timer 1+timer 2
 	;movei	#D_I2SENA|D_TIM1ENA|REGPAGE,r29			; I2S+Timer 1
 	;movei	#D_I2SENA|REGPAGE,r29					; I2S only
 	
 	
 	;movei	#D_TIM1ENA|REGPAGE,r29					; Timer 1 only
-	;movei	#D_TIM2ENA|REGPAGE,r29					; Timer 2 only
+	movei	#D_TIM2ENA|REGPAGE,r29					; Timer 2 only
 
 ;----------------------------
 ; variables pour movfa
@@ -3487,18 +3531,6 @@ DSP_boucle_centrale:
 
 
 
-; test button A
-	movei	#DSP_pad1,R30
-	load	(R30),R30
-	btst	#U235SE_BBUT_A,R30
-	jr		eq,DSP_no_A_pressed
-	nop
-	movei	#LSP_DSP_flag,R29
-	load	(R29),R30
-	not		R30
-	store	R30,(R29)
-
-DSP_no_A_pressed:
 ; test button B
 	movei	#DSP_pad1,R30
 	load	(R30),R30
@@ -3511,6 +3543,34 @@ DSP_no_A_pressed:
 	store	R30,(R29)
 
 DSP_no_B_pressed:
+
+; test button 1
+	movei	#DSP_pad1,R30
+	load	(R30),R30
+	btst	#U235SE_BBUT_1,R30
+	jr		eq,DSP_no_1_pressed
+	nop
+	movei	#GPU_vitesse_scrolling,R29
+	moveq	#2,R30
+	store	R30,(R29)
+DSP_no_1_pressed:
+
+; test button 2
+	movei	#DSP_pad1,R30
+	load	(R30),R30
+	btst	#U235SE_BBUT_2,R30
+	jr		eq,DSP_no_2_pressed
+	nop
+	movei	#GPU_vitesse_scrolling,R29
+	moveq	#4,R30
+	store	R30,(R29)
+; mettre position en multiple de 4
+	movei	#GPU_position_dans_la_colonne_scrolling,R29
+	load	(R29),R30
+	shrq	#2,R30			; arrondit au multiple de 4
+	shlq	#2,R30
+	store	R30,(R29)
+DSP_no_2_pressed:
 
 
 
@@ -3532,12 +3592,21 @@ DSP_no_B_pressed:
 	movei	#D_FLAGS,r30
 	movei	#D_TIM2ENA|REGPAGE,r27
 	store	R27,(R30)							; just timer 2
+	nop
+	nop
+	nop
+	nop
+
 	jump	(R28)
 	nop
 DSP_switch_ON:
 	movei	#D_I2SENA|D_TIM1ENA|D_TIM2ENA|REGPAGE,r27			; I2S+Timer 1+timer 2
 	movei	#D_FLAGS,r30
 	store	R27,(R30)
+	nop
+	nop
+	nop
+	nop
 	jump	(R28)
 
 	nop
@@ -3545,10 +3614,9 @@ DSP_switch_ON:
 	
 	.phrase
 
-EDZTMP1:											dc.l			$120771
 
-LSP_DSP_flag:										dc.l			1				; DSP replay flag 0=OFF / 1=ON
-LSP_DSP_oldflag:									dc.l			1
+LSP_DSP_flag:										dc.l			0				; DSP replay flag 0=OFF / 1=ON
+LSP_DSP_oldflag:									dc.l			0
 LSP_DSP_buttonB_pressed:							dc.l			0
 
 DSP_frequence_de_replay_reelle_I2S:					dc.l			0
@@ -3783,6 +3851,12 @@ LSP_module_sound_bank:
 	.incbin				"art.lsbank"
 	;.incbin			"LSP/d.lsbank"				; test module
 	even
+LSP_module_sound_bank_fin:
+	dc.l				0,0,0,0,0,0,0,0
+	.dphrase
+
+.phrase:
+GPU_vitesse_scrolling:						dc.l			vitesse_scrolling
 
 
 ;---------
@@ -3801,7 +3875,7 @@ tailles_des_caracteres:
 		dc.b		11,11,11,11,11,11,11,11,11,11,0,0,0,0,0,0			; ? ABCDEFG
 		dc.b		11,04,11,11,11,12,11,11,11,11,0,0,0,0,0,0			; HIJKLMNOPQ
 		dc.b		11,11,11,11,12,12,11,11,11,11,0,0,0,0,0,0			; RSTUVWXYZ
-
+		even
 
 texte_scrolling:
 		dc.b        "  Yuk, another megascroller!"
@@ -3988,13 +4062,13 @@ fin_table_forme_9:
 
 	.dphrase
 texte_intro1:
-	incbin		"intro-text.png_JAG_1byteperpixel"
+	.incbin		"intro-text.png_JAG_1byteperpixel"
 	even
 	
 
 	.dphrase
 image_debut:
-	incbin		"intro-bg.png_JAG"
+	.incbin		"intro-bg.png_JAG"
 	even
 
 
