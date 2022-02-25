@@ -260,6 +260,8 @@ boucle_copie_bloc_DSP:
 
 ; -----------------
 	
+	
+	
 	.if		GPU_OL_interrupt=1
     bsr     InitVideo               	; Setup our video registers.
 	.endif
@@ -278,7 +280,10 @@ boucle_copie_bloc_DSP:
 	move.w  #%01,INT1                 	; Enable video interrupts 11101
 
 
-
+	moveq	#0,d0
+	move.l	d0,OLP
+	
+	move	#$2700,sr
 
 	
 	;move	#$70,BG						; vert
@@ -316,6 +321,16 @@ boucle_copie_bloc_DSP:
 	;and.w   #%1111100011111111,sr				; 1111100011111111 => bits 8/9/10 = 0
 	and.w   #$f8ff,sr
 
+	moveq	#3-1,d2
+vsync2:
+;vsync*2
+	move.l		vbl_counter,d0
+vsync1:
+	move.l		vbl_counter,d1
+	cmp.l		d0,d1
+	beq.s		vsync1
+	dbf		d2,vsync2
+
 
 ; copie du code GPU
 	move.l	#0,G_CTRL
@@ -336,8 +351,13 @@ boucle_copie_bloc_GPU:
 	move.l	#GPU_init,G_PC
 	move.l  #RISCGO,G_CTRL	; START GPU
 
+	move.l	#ob_list_1,d0					; set the object list pointer
+	swap	d0
+	move.l	d0,OLP
+	
 
-	lea			liste_points_sprites,a0
+
+	;lea			liste_points_sprites,a0
 
 	;stop		#$2700
 	;stop #8448
@@ -346,8 +366,8 @@ boucle_copie_bloc_GPU:
 
 	
 toto:
-	move.l		vbl_counter,d0
-	move.l		vbl_counter_GPU,d1
+	;move.l		vbl_counter,d0
+	;move.l		vbl_counter_GPU,d1
 	bra.s	toto
 
 
@@ -632,6 +652,7 @@ wait_1_VBL2a1a3:
 	lea		ecran_intro+(136*320),a1
 	move.l	#(320*50)/2,d1
 	jsr		copy_texte_intro_sur_ecran_ecrase
+
 
 retour_introduction:
 
@@ -1317,7 +1338,9 @@ GPU_init:
 
 		store	R2,(R4)
 
-
+		;movei	#BG,R26
+		;movei	#$770,R25				; bleu clair
+		;storew	R25,(R26)
 		
 ; -------------------------------------------
 ; -------------------------------------------
@@ -3828,6 +3851,18 @@ fin_ob_liste_originale:
 		.68000
 		.data	
 		.dphrase
+
+.dphrase:
+ob_liste_stop:
+		.objproc    ; Engage the OP assembler
+		gpuobj 100,100
+		stop
+		stop
+		stop
+		.68000
+		.data	
+		.dphrase
+
 
 ; LSP
 silence:		
