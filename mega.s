@@ -51,6 +51,7 @@ nb_lignes_de_sprites_a_afficher		equ			16
 
 ob_list_1				equ		(ENDRAM-64000)				; address of read list
 ob_list_2				equ		(ENDRAM-128000)				; address of read list
+ob_list_introduction	equ		(ENDRAM-130000)	
 
 ; codes de controle du scrolling
 GPU_scrolling_code_de_controle_code_minimal				equ		128
@@ -174,13 +175,15 @@ boucle_clean_BSS2:
 	move.b		d0,(a0)+
 	cmp.l		a0,a1
 	bne.s		boucle_clean_BSS2
-; clear object list
+	
+; clear object list, fill with stop
 	lea			ob_list_2,a0
 	lea			ENDRAM,a1
 	moveq		#0,d0
 	
 boucle_clean_BSS3:
-	move.b		d0,(a0)+
+	move.l		#0,(a0)+
+	move.l		#4,(a0)+
 	cmp.l		a0,a1
 	bne.s		boucle_clean_BSS3
 	.endif
@@ -272,18 +275,19 @@ boucle_copie_bloc_DSP:
 	;move.w		#%0000001011000111, VMODE			; 640x256 / 16 bit RGB / $2C7
 
 
-	move.l  #VBL,LEVEL0     	; Install 68K LEVEL0 handler
-	move.w  a_vde,d0                	; Must be ODD
-	sub.w   #16,d0
-	ori.w   #1,d0
-	move.w  d0,VI
-	move.w  #%01,INT1                 	; Enable video interrupts 11101
+	;move.l  #VBL,LEVEL0     	; Install 68K LEVEL0 handler
+	;move.w  a_vde,d0                	; Must be ODD
+	;sub.w   #16,d0
+	;ori.w   #1,d0
+	;move.w  d0,VI
+	;move.w  #%01,INT1                 	; Enable video interrupts 11101
 
 
-	moveq	#0,d0
-	move.l	d0,OLP
+	;move.l	#ob_liste_stop,d0
+	;swap	d0
+	;move.l	d0,OLP
 	
-	move	#$2700,sr
+	;move	#$2700,sr
 
 	
 	;move	#$70,BG						; vert
@@ -351,9 +355,19 @@ boucle_copie_bloc_GPU:
 	move.l	#GPU_init,G_PC
 	move.l  #RISCGO,G_CTRL	; START GPU
 
-	move.l	#ob_list_1,d0					; set the object list pointer
-	swap	d0
-	move.l	d0,OLP
+	move.l		vbl_counter,d0
+vsync11:
+	move.l		vbl_counter,d1
+	cmp.l		d0,d1
+	beq.s		vsync11
+
+
+	;move.l	#ob_list_1,d0					; set the object list pointer
+	;swap	d0
+	;move.l	d0,OLP
+
+
+
 	
 
 
@@ -378,7 +392,7 @@ introduction:
 	
 	jsr		copy_image_sur_ecran_intro
 
-	move.l	#ob_list_1,d0					; set the object list pointer
+	move.l	#ob_list_introduction,d0					; set the object list pointer
 	swap	d0
 	move.l	d0,OLP
 	
@@ -1076,7 +1090,7 @@ copy_olist:
 				.endif
 
 copy_olist_intro:
-				move.l	#ob_list_1,A1_BASE			; = DEST
+				move.l	#ob_list_introduction,A1_BASE			; = DEST
 				move.l	#$0,A1_PIXEL
 				move.l	#PIXEL16|XADDPHR|PITCH1,A1_FLAGS
 				move.l	#ob_liste_originale,A2_BASE			; = source
@@ -1333,6 +1347,7 @@ GPU_init:
 		load	(R1),R3
 		store	R2,(R1)
 		movei	#OLP,R4
+		moveta	R3,R3
 		rorq	#16,R2
 		store	R3,(R0)
 
@@ -1354,51 +1369,6 @@ GPU_loop:
 
 
 
-; synchro avec l'interrupt object list
-		.if		GPU_OL_interrupt=1
-		movefa	R26,R26
-		
-GPU_boucle_wait_vsync:
-		movefa	R26,R25
-		cmp		R25,R26
-		jr		eq,GPU_boucle_wait_vsync
-		nop
-		.endif
-		
-; synrcho avec l'intterupt VI
-		.if		GPU_OL_interrupt=0
-		movei	#vbl_counter,R26
-		load	(R26),R25
-		or		R25,R25
-GPU_boucle_wait_vsync:
-		load	(R26),R24
-		or		R24,R24
-		nop
-		nop
-		nop
-		cmp		R25,R24
-		jr		eq,GPU_boucle_wait_vsync
-		nop
-		.endif
-
-		;movei	#BG,R26
-		;movei	#$700,R25				; bleu
-		;storew	R25,(R26)
-
-
-
-; swap les pointeurs d'OL
-		movei	#GPU_pointeur_object_list_a_modifier,R0
-		movei	#GPU_pointeur_object_list_a_afficher,R1
-		load	(R0),R2
-		load	(R1),R3
-		store	R2,(R1)
-		movei	#OLP,R4
-		moveta	R3,R3
-		rorq	#16,R2
-		store	R3,(R0)
-
-		store	R2,(R4)
 
 
 
@@ -1983,6 +1953,51 @@ GPU_avancer_scrolling_pas_fin_de_la_colonne:
 		addq	#1,R1
 		store	R1,(R0)
 
+; synchro avec l'interrupt object list
+		.if		GPU_OL_interrupt=1
+		movefa	R26,R26
+		
+GPU_boucle_wait_vsync:
+		movefa	R26,R25
+		cmp		R25,R26
+		jr		eq,GPU_boucle_wait_vsync
+		nop
+		.endif
+		
+; synrcho avec l'intterupt VI
+		.if		GPU_OL_interrupt=0
+		movei	#vbl_counter,R26
+		load	(R26),R25
+		or		R25,R25
+GPU_boucle_wait_vsync:
+		load	(R26),R24
+		or		R24,R24
+		nop
+		nop
+		nop
+		cmp		R25,R24
+		jr		eq,GPU_boucle_wait_vsync
+		nop
+		.endif
+
+		;movei	#BG,R26
+		;movei	#$700,R25				; bleu
+		;storew	R25,(R26)
+
+
+
+; swap les pointeurs d'OL
+		movei	#GPU_pointeur_object_list_a_modifier,R0
+		movei	#GPU_pointeur_object_list_a_afficher,R1
+		load	(R0),R2
+		load	(R1),R3
+		store	R2,(R1)
+		movei	#OLP,R4
+		moveta	R3,R3
+		rorq	#16,R2
+		store	R3,(R0)
+
+		store	R2,(R4)
 
 
 
@@ -3833,7 +3848,7 @@ SOUND_DRIVER_SIZE			.equ			YM_DSP_fin-DSP_base_memoire
 ; bitmap data addr, xloc, yloc, dwidth, iwidth, iheight, bpp, pallete idx, flags, firstpix, pitch
 ob_liste_originale:
 		.objproc    ; Engage the OP assembler
-        .org    ob_list_1
+        .org    ob_list_introduction
 	    branch      VC < 0, .stahp     ; Branch to the STOP object if VC < 69
         branch      VC > 241, .stahp    ; Branch to the STOP object if VC > 241
         bitmap      ecran_intro, 16, 28, 40,40,200,3,1
